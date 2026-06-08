@@ -16,10 +16,13 @@ io.on('connection', (socket) => {
     socket.on('join', (name) => {
         if (name === 'DISPLAY') {
             socket.join('display'); 
+            // ⭐ [수정된 부분] 전광판이 접속/새로고침 했을 때 즉시 현재 상태와 시작 버튼을 띄우도록 신호 전송!
+            socket.emit('updatePlayers', players, roundMode);
+            socket.emit('phaseChange', gameState, players, roundMode);
         } else {
             const isActive = (gameState === 'lobby' || gameState === 'reveal');
             
-            // ⭐ 중간 합류 시 현재 모드에 따라 기본 점수 다르게 지급
+            // 중간 합류 시 현재 모드에 따라 기본 점수 다르게 지급
             let initialScore = 0;
             if (roundMode === 'betting') initialScore = 100;
 
@@ -36,7 +39,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ⭐ 최초 게임 시작 (모드 선택)
+    // 최초 게임 시작 (모드 선택)
     socket.on('startGame', (mode) => {
         gameState = 'input_fingers';
         roundMode = mode || 'score';
@@ -46,13 +49,13 @@ io.on('connection', (socket) => {
             players[id].betTotal = null;
             players[id].betAmount = 0;
             players[id].active = true; 
-            // ⭐ 모드에 따른 초기 점수 세팅
+            // 모드에 따른 초기 점수 세팅
             players[id].score = (roundMode === 'score') ? 0 : 100;
         }
         io.emit('phaseChange', gameState, players, roundMode);
     });
 
-    // ⭐ 다음 라운드 시작 (기존 점수 유지, 모드 유지)
+    // 다음 라운드 시작 (기존 점수 유지, 모드 유지)
     socket.on('nextRound', () => {
         gameState = 'input_fingers';
         for (let id in players) {
@@ -64,7 +67,7 @@ io.on('connection', (socket) => {
         io.emit('phaseChange', gameState, players, roundMode);
     });
 
-    // ⭐ 게임 완전히 종료 (로비로 돌아감, 점수 초기화)
+    // 게임 완전히 종료 (로비로 돌아감, 점수 초기화)
     socket.on('endGame', () => {
         gameState = 'lobby';
         for (let id in players) {
