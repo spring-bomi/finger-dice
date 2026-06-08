@@ -9,22 +9,14 @@
         body { margin: 0; background: radial-gradient(circle at 50% 50%, #1e272e, #000000); color: #fff; font-family: 'Noto Sans KR', sans-serif; text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; touch-action: manipulation; transition: background 0.5s; }
         .screen { display: none; width: 90%; max-width: 400px; animation: fadeIn 0.5s ease-out; }
         .active { display: block; }
-        
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-        /* 고급스러운 네온 입력창 */
         input { padding: 15px; font-size: 20px; border-radius: 12px; border: 2px solid #f39c12; background: rgba(0,0,0,0.5); color: #f1c40f; width: 80%; margin-bottom: 30px; text-align: center; font-weight: bold; outline: none; box-shadow: 0 0 10px rgba(243, 156, 18, 0.3); box-sizing: border-box; transition: 0.3s; }
         input:focus { box-shadow: 0 0 20px rgba(243, 156, 18, 0.8); }
-        
-        /* 버튼 스타일 */
         button { padding: 15px 30px; font-size: 20px; background: linear-gradient(135deg, #f39c12, #d35400); color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: 900; width: 100%; box-shadow: 0 5px 20px rgba(211, 84, 0, 0.5); box-sizing: border-box; text-transform: uppercase; transition: transform 0.1s; }
         button:active { transform: scale(0.95); }
-        
-        /* 칩 모양의 손가락 버튼 */
         .finger-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px; justify-items: center; }
         .finger-btn { background: #2c3e50; border: 4px dashed #34495e; border-radius: 50%; width: 80px; height: 80px; font-size: 28px; padding: 0; box-shadow: 0 10px 20px rgba(0,0,0,0.5); color: #ecf0f1; transition: all 0.2s; }
         .finger-btn:active { background: #f39c12; border-color: #fff; color: #000; box-shadow: 0 0 20px #f39c12; transform: scale(0.9); }
-
         .title { color: #f1c40f; text-shadow: 0 0 15px rgba(241, 196, 15, 0.5); font-weight: 900; letter-spacing: 2px; }
         .subtitle { color: #bdc3c7; font-size: 16px; margin-bottom: 40px; }
     </style>
@@ -40,7 +32,7 @@
 
     <div id="waitScreen" class="screen">
         <div class="loader" style="font-size: 50px; margin-bottom: 20px; animation: spin 2s linear infinite;">⏳</div>
-        <h2 id="waitMessage" style="color: #3498db; text-shadow: 0 0 10px rgba(52, 152, 219, 0.5);">전광판을 보고 대기하세요...</h2>
+        <h2 id="waitMessage" style="color: #3498db; line-height: 1.5; text-shadow: 0 0 10px rgba(52, 152, 219, 0.5);">전광판을 보고 대기하세요...</h2>
     </div>
 
     <div id="fingerScreen" class="screen">
@@ -89,8 +81,21 @@
             }
         });
 
-        socket.on('phaseChange', (phase) => {
-            if(phase === 'input_fingers') switchScreen('fingerScreen');
+        // ⭐ 서버에서 상태와 함께 플레이어 정보를 보내줌
+        socket.on('phaseChange', (phase, playersData) => {
+            const me = playersData[socket.id];
+            
+            // ⭐ 중간 합류자로 판단되면(active: false) 입력 화면으로 넘어가지 않고 대기시킴
+            if (me && !me.active && phase !== 'lobby' && phase !== 'reveal') {
+                document.getElementById('waitMessage').innerHTML = `<span style="color:#e74c3c;">현재 게임이 진행 중입니다.</span><br><br>이번 라운드는 관전하시고,<br>다음 라운드부터 자동 참여됩니다!`;
+                switchScreen('waitScreen');
+                return;
+            }
+
+            if(phase === 'input_fingers') {
+                document.getElementById('waitMessage').innerText = "다른 플레이어의 선택을 기다리는 중...";
+                switchScreen('fingerScreen');
+            }
             if(phase === 'betting') {
                 document.getElementById('betInput').value = '';
                 switchScreen('bettingScreen');
@@ -118,8 +123,14 @@
             switchScreen('resultScreen');
             
             const myData = data.players[socket.id];
-            const isWinner = myData.betTotal === data.trueTotal;
             
+            // ⭐ 관전자 전용 결과 화면
+            if (!myData.active) {
+                document.getElementById('myResult').innerHTML = `<div style="font-size: 20px; color: #bdc3c7;">이번 라운드는 관전하셨습니다.<br><br>잠시 후 <span style="color:#f1c40f">다음 라운드</span>부터<br>참여하실 수 있습니다!</div>`;
+                return;
+            }
+
+            const isWinner = myData.betTotal === data.trueTotal;
             let resultHtml = `<div style="font-size: 18px; color: #95a5a6;">실제 총합</div><div style="font-size: 60px; color: #fff; font-weight: 900; text-shadow: 0 0 20px #fff; margin: 10px 0;">${data.trueTotal}</div>`;
             
             if (isWinner) {
