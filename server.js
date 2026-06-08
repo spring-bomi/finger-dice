@@ -10,54 +10,57 @@ app.use(express.static('public'));
 
 let players = {}; 
 let gameState = 'lobby'; 
+let roundMode = 'score'; // 'score'(점수제) 또는 'betting'(베팅제)
 
 io.on('connection', (socket) => {
     socket.on('join', (name) => {
         if (name === 'DISPLAY') {
             socket.join('display'); 
         } else {
-            // ⭐ 게임이 로비(대기) 상태이거나 결과 공개 상태일 때만 즉시 참여(active: true)
-            // 게임 도중(input_fingers, betting)에 들어오면 이번 판은 관전(active: false)
             const isActive = (gameState === 'lobby' || gameState === 'reveal');
-            
-            players[socket.id] = { name: name, fingers: null, betTotal: null, score: 0, active: isActive };
-            io.emit('updatePlayers', players);
-            
-            // 중간에 들어온 사람의 화면을 맞추기 위해 현재 상태 개별 전송
-            socket.emit('phaseChange', gameState, players);
+            // ⭐ 베팅을 위해 초기 자본금 100 지급, betAmount 추가
+            players[socket.id] = { name: name, fingers: null, betTotal: null, betAmount: 0, score: 100, active: isActive };
+            io.emit('updatePlayers', players, roundMode);
+            socket.emit('phaseChange', gameState, players, roundMode);
         }
     });
 
-    socket.on('startGame', () => {
+    // ⭐ 게임 시작 시 모드(점수제/베팅제)를 전달받음
+    socket.on('startGame', (mode) => {
         gameState = 'input_fingers';
+        roundMode = mode || 'score';
+        
         for (let id in players) {
             players[id].fingers = null;
             players[id].betTotal = null;
-            players[id].active = true; // ⭐ 새 라운드 시작 시 관전자 포함 모두를 참여자로 변경
+            players[id].betAmount = 0;
+            players[id].active = true; 
         }
-        io.emit('phaseChange', gameState, players);
+        io.emit('phaseChange', gameState, players, roundMode);
     });
 
     socket.on('submitFingers', (num) => {
         if (players[socket.id] && players[socket.id].active) {
             players[socket.id].fingers = num;
-            io.to('display').emit('playerUpdated', players);
+            io.to('display').emit('playerUpdated', players, roundMode);
 
-            // ⭐ '이번 라운드 참여자(active)'들만 체크
             const activePlayers = Object.values(players).filter(p => p.active);
             const allSubmitted = activePlayers.every(p => p.fingers !== null);
             
             if (allSubmitted && activePlayers.length > 0) {
                 gameState = 'betting';
-                io.emit('phaseChange', gameState, players);
+                io.emit('phaseChange', gameState, players, roundMode);
             }
         }
     });
 
-    socket.on('submitBet', (predictedTotal) => {
+    // ⭐ 예측 총합과 베팅 금액을 함께 받음
+    socket.on('submitBet', (data) => {
         if (players[socket.id] && players[socket.id].active) {
-            players[socket.id].betTotal = predictedTotal;
-            io.to('display').emit('playerUpdated', players);
+            players[socket.id].betTotal = data.total;
+            players[socket.id].betAmount = data.amount || 0;
+            
+            io.to('display').emit('playerUpdated', players, roundMode);
 
             const activePlayers = Object.values(players).filter(p => p.active);
             const allBet = activePlayers.every(p => p.betTotal !== null);
@@ -66,42 +69,54 @@ io.on('connection', (socket) => {
                 gameState = 'reveal';
                 const trueTotal = activePlayers.reduce((sum, p) => sum + p.fingers, 0);
                 
+                // ⭐ 모드별 점수/칩 정산 로직
                 for (let id in players) {
-                    if (players[id].active && players[id].betTotal === trueTotal) {
-                        players[id].score += 1;
+                    if (players[id].active) {
+                        const p = players[id];
+                        if (roundMode === 'score') {
+                            if (p.betTotal === trueTotal) p.score += 1; // 점수제: 맞추면 +1점
+                        } else if (roundMode === 'betting') {
+                            if (p.betTotal === trueTotal) {
+                                p.score += p.betAmount * 2; // 베팅제: 맞추면 베팅액의 2배 수익 (총 3배당)
+                            } else {
+                                p.score -= p.betAmount; // 틀리면 베팅액 몰수
+                            }
+                        }
                     }
                 }
-                io.emit('revealResult', { players, trueTotal });
+                io.emit('revealResult', { players, trueTotal, roundMode });
             }
         }
     });
 
-    // ⭐ 중간에 나갔을 때 게임이 멈추는 현상 방지
     socket.on('disconnect', () => {
         delete players[socket.id];
-        io.emit('updatePlayers', players);
+        io.emit('updatePlayers', players, roundMode);
         
         const activePlayers = Object.values(players).filter(p => p.active);
-        
         if (activePlayers.length > 0) {
             if (gameState === 'input_fingers' && activePlayers.every(p => p.fingers !== null)) {
                 gameState = 'betting';
-                io.emit('phaseChange', gameState, players);
+                io.emit('phaseChange', gameState, players, roundMode);
             } else if (gameState === 'betting' && activePlayers.every(p => p.betTotal !== null)) {
                 gameState = 'reveal';
                 const trueTotal = activePlayers.reduce((sum, p) => sum + p.fingers, 0);
+                
                 for (let id in players) {
-                    if (players[id].active && players[id].betTotal === trueTotal) {
-                        players[id].score += 1;
+                    if (players[id].active) {
+                        if (roundMode === 'score' && players[id].betTotal === trueTotal) {
+                            players[id].score += 1;
+                        } else if (roundMode === 'betting') {
+                            if (players[id].betTotal === trueTotal) players[id].score += players[id].betAmount * 2;
+                            else players[id].score -= players[id].betAmount;
+                        }
                     }
                 }
-                io.emit('revealResult', { players, trueTotal });
+                io.emit('revealResult', { players, trueTotal, roundMode });
             }
         }
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`핑거 주사위 서버가 ${PORT}포트에서 실행 중입니다.`);
-});
+server.listen(PORT, () => { console.log(`서버가 ${PORT}포트에서 실행 중입니다.`); });
