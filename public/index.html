@@ -10,15 +10,17 @@
         .screen { display: none; width: 90%; max-width: 400px; animation: fadeIn 0.5s ease-out; }
         .active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        input { padding: 15px; font-size: 20px; border-radius: 12px; border: 2px solid #f39c12; background: rgba(0,0,0,0.5); color: #f1c40f; width: 80%; margin-bottom: 30px; text-align: center; font-weight: bold; outline: none; box-shadow: 0 0 10px rgba(243, 156, 18, 0.3); box-sizing: border-box; transition: 0.3s; }
+        
+        input { padding: 15px; font-size: 20px; border-radius: 12px; border: 2px solid #f39c12; background: rgba(0,0,0,0.5); color: #f1c40f; width: 80%; margin-bottom: 20px; text-align: center; font-weight: bold; outline: none; box-shadow: 0 0 10px rgba(243, 156, 18, 0.3); box-sizing: border-box; transition: 0.3s; }
         input:focus { box-shadow: 0 0 20px rgba(243, 156, 18, 0.8); }
         button { padding: 15px 30px; font-size: 20px; background: linear-gradient(135deg, #f39c12, #d35400); color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: 900; width: 100%; box-shadow: 0 5px 20px rgba(211, 84, 0, 0.5); box-sizing: border-box; text-transform: uppercase; transition: transform 0.1s; }
         button:active { transform: scale(0.95); }
+        
         .finger-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px; justify-items: center; }
         .finger-btn { background: #2c3e50; border: 4px dashed #34495e; border-radius: 50%; width: 80px; height: 80px; font-size: 28px; padding: 0; box-shadow: 0 10px 20px rgba(0,0,0,0.5); color: #ecf0f1; transition: all 0.2s; }
         .finger-btn:active { background: #f39c12; border-color: #fff; color: #000; box-shadow: 0 0 20px #f39c12; transform: scale(0.9); }
         .title { color: #f1c40f; text-shadow: 0 0 15px rgba(241, 196, 15, 0.5); font-weight: 900; letter-spacing: 2px; }
-        .subtitle { color: #bdc3c7; font-size: 16px; margin-bottom: 40px; }
+        .subtitle { color: #bdc3c7; font-size: 16px; margin-bottom: 30px; }
     </style>
 </head>
 <body>
@@ -51,8 +53,16 @@
     <div id="bettingScreen" class="screen">
         <h2 class="title">총합 예측 베팅</h2>
         <p class="subtitle">이 방의 전체 손가락 합은 몇 개일까요?</p>
-        <input type="number" id="betInput" placeholder="숫자 입력 (예: 15)" min="0">
-        <button id="betBtn" style="background: linear-gradient(135deg, #27ae60, #2ecc71); box-shadow: 0 5px 20px rgba(46, 204, 113, 0.5);">예측 베팅하기</button>
+        
+        <input type="number" id="betTotalInput" placeholder="예측 총합 (예: 15)" min="0">
+        
+        <div id="betAmountSection" style="display: none; margin-top: 10px; padding-top: 20px; border-top: 1px dashed rgba(255,255,255,0.2);">
+            <p style="color: #2ecc71; margin-bottom: 10px; font-weight: bold;">나의 보유 칩: 💰<span id="myCurrentScore">100</span></p>
+            <input type="number" id="betAmountInput" placeholder="얼마를 걸겠습니까?" min="0">
+            <p style="color: #95a5a6; font-size: 12px; margin-top:-10px; margin-bottom: 20px;">* 정답 시 3배당 획득, 오답 시 베팅금 몰수</p>
+        </div>
+
+        <button id="betBtn" style="background: linear-gradient(135deg, #27ae60, #2ecc71); box-shadow: 0 5px 20px rgba(46, 204, 113, 0.5);">확정하기</button>
     </div>
 
     <div id="resultScreen" class="screen">
@@ -64,6 +74,8 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
+        let currentMode = 'score';
+        let myScore = 100;
         
         function switchScreen(screenId) {
             document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
@@ -76,16 +88,13 @@
             if(nickname) {
                 socket.emit('join', nickname);
                 switchScreen('waitScreen');
-            } else {
-                alert("닉네임을 입력해주세요!");
-            }
+            } else { alert("닉네임을 입력해주세요!"); }
         });
 
-        // ⭐ 서버에서 상태와 함께 플레이어 정보를 보내줌
-        socket.on('phaseChange', (phase, playersData) => {
+        socket.on('phaseChange', (phase, playersData, mode) => {
+            currentMode = mode;
             const me = playersData[socket.id];
             
-            // ⭐ 중간 합류자로 판단되면(active: false) 입력 화면으로 넘어가지 않고 대기시킴
             if (me && !me.active && phase !== 'lobby' && phase !== 'reveal') {
                 document.getElementById('waitMessage').innerHTML = `<span style="color:#e74c3c;">현재 게임이 진행 중입니다.</span><br><br>이번 라운드는 관전하시고,<br>다음 라운드부터 자동 참여됩니다!`;
                 switchScreen('waitScreen');
@@ -97,7 +106,17 @@
                 switchScreen('fingerScreen');
             }
             if(phase === 'betting') {
-                document.getElementById('betInput').value = '';
+                document.getElementById('betTotalInput').value = '';
+                document.getElementById('betAmountInput').value = '';
+                
+                // ⭐ 모드에 따라 베팅 입력창 표시 여부 결정
+                if (currentMode === 'betting') {
+                    myScore = me.score;
+                    document.getElementById('myCurrentScore').innerText = myScore;
+                    document.getElementById('betAmountSection').style.display = 'block';
+                } else {
+                    document.getElementById('betAmountSection').style.display = 'none';
+                }
                 switchScreen('bettingScreen');
             }
         });
@@ -109,22 +128,31 @@
         }
 
         document.getElementById('betBtn').addEventListener('click', () => {
-            const betVal = parseInt(document.getElementById('betInput').value);
-            if(!isNaN(betVal) && betVal >= 0) {
-                socket.emit('submitBet', betVal);
-                document.getElementById('waitMessage').innerText = "모든 베팅이 끝날 때까지 대기하세요...";
-                switchScreen('waitScreen');
-            } else {
-                alert("정확한 숫자를 입력해주세요!");
+            const betTotal = parseInt(document.getElementById('betTotalInput').value);
+            let betAmount = 0;
+            
+            if(isNaN(betTotal) || betTotal < 0) {
+                alert("정확한 예측 숫자를 입력해주세요!");
+                return;
             }
+
+            if (currentMode === 'betting') {
+                betAmount = parseInt(document.getElementById('betAmountInput').value);
+                if (isNaN(betAmount) || betAmount < 0 || betAmount > myScore) {
+                    alert(`올바른 베팅 금액을 입력하세요.\n(현재 보유 칩: ${myScore} 이하)`);
+                    return;
+                }
+            }
+
+            socket.emit('submitBet', { total: betTotal, amount: betAmount });
+            document.getElementById('waitMessage').innerText = "모든 베팅이 끝날 때까지 대기하세요...";
+            switchScreen('waitScreen');
         });
 
         socket.on('revealResult', (data) => {
             switchScreen('resultScreen');
-            
             const myData = data.players[socket.id];
             
-            // ⭐ 관전자 전용 결과 화면
             if (!myData.active) {
                 document.getElementById('myResult').innerHTML = `<div style="font-size: 20px; color: #bdc3c7;">이번 라운드는 관전하셨습니다.<br><br>잠시 후 <span style="color:#f1c40f">다음 라운드</span>부터<br>참여하실 수 있습니다!</div>`;
                 return;
@@ -134,10 +162,12 @@
             let resultHtml = `<div style="font-size: 18px; color: #95a5a6;">실제 총합</div><div style="font-size: 60px; color: #fff; font-weight: 900; text-shadow: 0 0 20px #fff; margin: 10px 0;">${data.trueTotal}</div>`;
             
             if (isWinner) {
-                resultHtml += `<div style="color: #f1c40f; font-size: 24px; font-weight: bold; margin-top: 20px;">🎉 JACKPOT! 정답입니다! 🎉<br><span style="color:#2ecc71; font-size: 18px;">+1점 획득</span></div>`;
+                let rewardText = data.roundMode === 'score' ? '+1점 획득!' : `💰 +${myData.betAmount * 3} 획득! (본전 포함)`;
+                resultHtml += `<div style="color: #f1c40f; font-size: 24px; font-weight: bold; margin-top: 20px;">🎉 JACKPOT! 정답입니다! 🎉<br><span style="color:#2ecc71; font-size: 18px;">${rewardText}</span></div>`;
                 document.body.style.background = 'radial-gradient(circle at 50% 50%, #5b4000, #000000)'; 
             } else {
-                resultHtml += `<div style="color: #e74c3c; font-size: 20px; margin-top: 20px; font-weight: bold;">베팅 실패...<br><span style="font-size: 16px; color: #7f8c8d; font-weight: normal;">(나의 예측: ${myData.betTotal})</span></div>`;
+                let loseText = data.roundMode === 'score' ? '(나의 예측: ' + myData.betTotal + ')' : `베팅 금액 💰${myData.betAmount} 몰수`;
+                resultHtml += `<div style="color: #e74c3c; font-size: 20px; margin-top: 20px; font-weight: bold;">베팅 실패...<br><span style="font-size: 16px; color: #7f8c8d; font-weight: normal;">${loseText}</span></div>`;
             }
             
             document.getElementById('myResult').innerHTML = resultHtml;
