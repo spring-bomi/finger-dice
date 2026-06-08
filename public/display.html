@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>메인 전광판 - 핑거 주사위</title>
+    <style>
+        body { background-color: #111; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: sans-serif; overflow: hidden;}
+        h1 { color: #f1c40f; font-size: 3rem; margin-bottom: 10px; }
+        #statusTitle { font-size: 2rem; margin-bottom: 30px; color: #ecf0f1; text-align: center;}
+        
+        #playerBoard { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; width: 90%; max-height: 60vh; overflow-y: auto;}
+        .player-card { background-color: #34495e; padding: 20px; border-radius: 15px; text-align: center; width: 200px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+        .player-name { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+        .player-state { font-size: 18px; color: #2ecc71; font-weight: bold;}
+        
+        #startBtn { padding: 15px 40px; font-size: 26px; background-color: #e74c3c; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; margin-top: 40px; box-shadow: 0 5px 15px rgba(231, 76, 60, 0.4);}
+        #startBtn:hover { background-color: #c0392b; }
+        
+        #trueTotalDisplay { font-size: 5rem; color: #e74c3c; display: none; margin-top: 20px; font-weight: bold; text-shadow: 0 0 20px rgba(231, 76, 60, 0.6);}
+    </style>
+</head>
+<body>
+
+    <h1>🤞 핑거 주사위 눈치게임</h1>
+    <div id="statusTitle">참가자를 기다리는 중...</div>
+
+    <div id="playerBoard"></div>
+    <div id="trueTotalDisplay"></div>
+
+    <button id="startBtn">🚨 라운드 시작 🚨</button>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        socket.emit('join', 'DISPLAY');
+
+        const statusTitle = document.getElementById('statusTitle');
+        const playerBoard = document.getElementById('playerBoard');
+        const startBtn = document.getElementById('startBtn');
+        const trueTotalDisplay = document.getElementById('trueTotalDisplay');
+
+        let currentPhase = 'lobby';
+
+        // 플레이어 화면 업데이트
+        function renderPlayers(players) {
+            playerBoard.innerHTML = '';
+            for (const id in players) {
+                const p = players[id];
+                let stateText = '대기 중';
+                
+                if (currentPhase === 'input_fingers') {
+                    stateText = p.fingers !== null ? '완료! 👍' : '고민 중... 🤔';
+                } else if (currentPhase === 'betting') {
+                    stateText = p.betTotal !== null ? '베팅 완료! 💸' : '눈치 보는 중... 👀';
+                } else if (currentPhase === 'reveal') {
+                    stateText = `🖐 낸 개수: ${p.fingers}개<br>🎯 예측: ${p.betTotal}`;
+                }
+
+                playerBoard.innerHTML += `
+                    <div class="player-card">
+                        <div class="player-name">${p.name}</div>
+                        <div class="player-state">${stateText}</div>
+                    </div>
+                `;
+            }
+        }
+
+        socket.on('updatePlayers', (players) => {
+            if (currentPhase === 'lobby') {
+                statusTitle.innerText = `현재 ${Object.keys(players).length}명 접속 완료`;
+            }
+            renderPlayers(players);
+        });
+
+        socket.on('playerUpdated', (players) => {
+            renderPlayers(players);
+        });
+
+        socket.on('phaseChange', (phase) => {
+            currentPhase = phase;
+            trueTotalDisplay.style.display = 'none';
+            if (phase === 'input_fingers') {
+                statusTitle.innerText = "각자 손가락 개수를 확정하는 중입니다!";
+                startBtn.style.display = 'none';
+            } else if (phase === 'betting') {
+                statusTitle.innerText = "모두의 핑거 총합을 예측하여 베팅하세요!";
+            }
+        });
+
+        socket.on('revealResult', (data) => {
+            currentPhase = 'reveal';
+            statusTitle.innerText = "결과 공개!! 승자는 누구인가?";
+            renderPlayers(data.players);
+            
+            trueTotalDisplay.innerHTML = `실제 전체 합: ${data.trueTotal}개`;
+            trueTotalDisplay.style.display = 'block';
+            
+            setTimeout(() => { 
+                startBtn.style.display = 'block'; 
+                startBtn.innerText = "다음 라운드 시작"; 
+            }, 3000);
+        });
+
+        startBtn.addEventListener('click', () => {
+            socket.emit('startGame');
+        });
+    </script>
+</body>
+</html>
