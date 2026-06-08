@@ -39,21 +39,24 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 최초 게임 시작 (모드 선택)
-    socket.on('startGame', (mode) => {
-        gameState = 'input_fingers';
-        roundMode = mode || 'score';
-        
-        for (let id in players) {
-            players[id].fingers = null;
-            players[id].betTotal = null;
-            players[id].betAmount = 0;
-            players[id].active = true; 
-            // 모드에 따른 초기 점수 세팅
-            players[id].score = (roundMode === 'score') ? 0 : 100;
-        }
-        io.emit('phaseChange', gameState, players, roundMode);
-    });
+    // 기존 코드에서 startGame 이벤트를 찾아 아래처럼 수정해주세요.
+
+socket.on('startGame', (mode) => {
+    // ⭐ 서버 측 방어: 플레이어가 0명이면 아무 작업도 하지 않고 돌려보냄
+    if (Object.keys(players).length === 0) return; 
+
+    gameState = 'input_fingers';
+    roundMode = mode || 'score';
+    
+    for (let id in players) {
+        players[id].fingers = null;
+        players[id].betTotal = null;
+        players[id].betAmount = 0;
+        players[id].active = true; 
+        players[id].score = (roundMode === 'score') ? 0 : 100;
+    }
+    io.emit('phaseChange', gameState, players, roundMode);
+});
 
     // 다음 라운드 시작 (기존 점수 유지, 모드 유지)
     socket.on('nextRound', () => {
