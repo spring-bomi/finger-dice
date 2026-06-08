@@ -10,7 +10,7 @@ app.use(express.static('public'));
 
 let players = {}; 
 let gameState = 'lobby'; 
-let roundMode = 'score'; // 'score'(점수제) 또는 'betting'(베팅제)
+let roundMode = 'score'; // 'score' 또는 'betting'
 
 io.on('connection', (socket) => {
     socket.on('join', (name) => {
@@ -18,14 +18,25 @@ io.on('connection', (socket) => {
             socket.join('display'); 
         } else {
             const isActive = (gameState === 'lobby' || gameState === 'reveal');
-            // ⭐ 베팅을 위해 초기 자본금 100 지급, betAmount 추가
-            players[socket.id] = { name: name, fingers: null, betTotal: null, betAmount: 0, score: 100, active: isActive };
+            
+            // ⭐ 중간 합류 시 현재 모드에 따라 기본 점수 다르게 지급
+            let initialScore = 0;
+            if (roundMode === 'betting') initialScore = 100;
+
+            players[socket.id] = { 
+                name: name, 
+                fingers: null, 
+                betTotal: null, 
+                betAmount: 0, 
+                score: initialScore, 
+                active: isActive 
+            };
             io.emit('updatePlayers', players, roundMode);
             socket.emit('phaseChange', gameState, players, roundMode);
         }
     });
 
-    // ⭐ 게임 시작 시 모드(점수제/베팅제)를 전달받음
+    // ⭐ 최초 게임 시작 (모드 선택)
     socket.on('startGame', (mode) => {
         gameState = 'input_fingers';
         roundMode = mode || 'score';
@@ -35,6 +46,33 @@ io.on('connection', (socket) => {
             players[id].betTotal = null;
             players[id].betAmount = 0;
             players[id].active = true; 
+            // ⭐ 모드에 따른 초기 점수 세팅
+            players[id].score = (roundMode === 'score') ? 0 : 100;
+        }
+        io.emit('phaseChange', gameState, players, roundMode);
+    });
+
+    // ⭐ 다음 라운드 시작 (기존 점수 유지, 모드 유지)
+    socket.on('nextRound', () => {
+        gameState = 'input_fingers';
+        for (let id in players) {
+            players[id].fingers = null;
+            players[id].betTotal = null;
+            players[id].betAmount = 0;
+            players[id].active = true; // 대기자 합류
+        }
+        io.emit('phaseChange', gameState, players, roundMode);
+    });
+
+    // ⭐ 게임 완전히 종료 (로비로 돌아감, 점수 초기화)
+    socket.on('endGame', () => {
+        gameState = 'lobby';
+        for (let id in players) {
+            players[id].fingers = null;
+            players[id].betTotal = null;
+            players[id].betAmount = 0;
+            players[id].score = 0; 
+            players[id].active = true;
         }
         io.emit('phaseChange', gameState, players, roundMode);
     });
@@ -54,7 +92,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ⭐ 예측 총합과 베팅 금액을 함께 받음
     socket.on('submitBet', (data) => {
         if (players[socket.id] && players[socket.id].active) {
             players[socket.id].betTotal = data.total;
@@ -69,17 +106,16 @@ io.on('connection', (socket) => {
                 gameState = 'reveal';
                 const trueTotal = activePlayers.reduce((sum, p) => sum + p.fingers, 0);
                 
-                // ⭐ 모드별 점수/칩 정산 로직
                 for (let id in players) {
                     if (players[id].active) {
                         const p = players[id];
                         if (roundMode === 'score') {
-                            if (p.betTotal === trueTotal) p.score += 1; // 점수제: 맞추면 +1점
+                            if (p.betTotal === trueTotal) p.score += 1;
                         } else if (roundMode === 'betting') {
                             if (p.betTotal === trueTotal) {
-                                p.score += p.betAmount * 2; // 베팅제: 맞추면 베팅액의 2배 수익 (총 3배당)
+                                p.score += p.betAmount * 2; 
                             } else {
-                                p.score -= p.betAmount; // 틀리면 베팅액 몰수
+                                p.score -= p.betAmount; 
                             }
                         }
                     }
