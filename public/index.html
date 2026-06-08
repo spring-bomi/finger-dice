@@ -32,9 +32,10 @@
         <button id="joinBtn">테이블 입장</button>
     </div>
 
+    <!-- ⭐ 상황별로 메시지가 바뀌는 대기 화면 -->
     <div id="waitScreen" class="screen">
         <div class="loader" style="font-size: 50px; margin-bottom: 20px; animation: spin 2s linear infinite;">⏳</div>
-        <h2 id="waitMessage" style="color: #3498db; line-height: 1.5; text-shadow: 0 0 10px rgba(52, 152, 219, 0.5);">전광판을 보고 대기하세요...</h2>
+        <h2 id="waitMessage" style="color: #3498db; line-height: 1.5; text-shadow: 0 0 10px rgba(52, 152, 219, 0.5);">대기 중...</h2>
     </div>
 
     <div id="fingerScreen" class="screen">
@@ -57,7 +58,7 @@
         <input type="number" id="betTotalInput" placeholder="예측 총합 (예: 15)" min="0">
         
         <div id="betAmountSection" style="display: none; margin-top: 10px; padding-top: 20px; border-top: 1px dashed rgba(255,255,255,0.2);">
-            <p style="color: #2ecc71; margin-bottom: 10px; font-weight: bold;">나의 보유 칩: 💰<span id="myCurrentScore">100</span></p>
+            <p style="color: #2ecc71; margin-bottom: 10px; font-weight: bold;">나의 보유 칩: 💰<span id="myCurrentScore">0</span></p>
             <input type="number" id="betAmountInput" placeholder="얼마를 걸겠습니까?" min="0">
             <p style="color: #95a5a6; font-size: 12px; margin-top:-10px; margin-bottom: 20px;">* 정답 시 3배당 획득, 오답 시 베팅금 몰수</p>
         </div>
@@ -68,14 +69,15 @@
     <div id="resultScreen" class="screen">
         <h2 style="color: #ecf0f1; letter-spacing: 5px;">RESULT</h2>
         <div id="myResult" style="margin: 30px 0; background: rgba(0,0,0,0.6); padding: 20px; border-radius: 15px; border: 1px solid rgba(255,255,255,0.1);"></div>
-        <button onclick="switchScreen('waitScreen')" style="background: #34495e; box-shadow: none;">대기 화면으로</button>
+        <!-- 대기 화면으로 돌아갈 때 안내 문구 세팅 -->
+        <button onclick="document.getElementById('waitMessage').innerHTML='다음 라운드를 준비하는 중입니다...<br><br><span style=\'font-size:16px; color:#f1c40f;\'>전광판을 확인해주세요.</span>'; switchScreen('waitScreen');" style="background: #34495e; box-shadow: none;">대기 화면으로</button>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         let currentMode = 'score';
-        let myScore = 100;
+        let myScore = 0;
         
         function switchScreen(screenId) {
             document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
@@ -87,6 +89,8 @@
             const nickname = document.getElementById('nicknameInput').value.trim();
             if(nickname) {
                 socket.emit('join', nickname);
+                // 로그인 후 로비 대기 메시지
+                document.getElementById('waitMessage').innerHTML = `입장 완료!<br><br><span style="font-size:16px; color:#f1c40f;">호스트가 게임 모드를 선택할 때까지<br>기다려주세요.</span>`;
                 switchScreen('waitScreen');
             } else { alert("닉네임을 입력해주세요!"); }
         });
@@ -95,21 +99,28 @@
             currentMode = mode;
             const me = playersData[socket.id];
             
-            if (me && !me.active && phase !== 'lobby' && phase !== 'reveal') {
-                document.getElementById('waitMessage').innerHTML = `<span style="color:#e74c3c;">현재 게임이 진행 중입니다.</span><br><br>이번 라운드는 관전하시고,<br>다음 라운드부터 자동 참여됩니다!`;
+            // 로비(게임 종료) 상태일 때 처리
+            if (phase === 'lobby') {
+                document.getElementById('waitMessage').innerHTML = `대기실 입장<br><br><span style="font-size:16px; color:#f1c40f;">호스트가 게임 모드를 선택할 때까지<br>기다려주세요.</span>`;
+                if(me && !document.getElementById('loginScreen').classList.contains('active')) {
+                    switchScreen('waitScreen');
+                }
+                return;
+            }
+
+            if (me && !me.active && phase !== 'reveal') {
+                document.getElementById('waitMessage').innerHTML = `<span style="color:#e74c3c;">현재 라운드가 진행 중입니다.</span><br><br><span style="font-size:16px; color:#bdc3c7;">이번 판은 관전하시고,<br>다음 라운드부터 자동 참여됩니다!</span>`;
                 switchScreen('waitScreen');
                 return;
             }
 
             if(phase === 'input_fingers') {
-                document.getElementById('waitMessage').innerText = "다른 플레이어의 선택을 기다리는 중...";
                 switchScreen('fingerScreen');
             }
             if(phase === 'betting') {
                 document.getElementById('betTotalInput').value = '';
                 document.getElementById('betAmountInput').value = '';
                 
-                // ⭐ 모드에 따라 베팅 입력창 표시 여부 결정
                 if (currentMode === 'betting') {
                     myScore = me.score;
                     document.getElementById('myCurrentScore').innerText = myScore;
@@ -123,7 +134,8 @@
 
         window.submitFingers = function(num) {
             socket.emit('submitFingers', num);
-            document.getElementById('waitMessage').innerText = "다른 플레이어의 선택을 기다리는 중...";
+            // 손가락 제출 후 대기 메시지
+            document.getElementById('waitMessage').innerHTML = `선택 완료!<br><br><span style="font-size:16px; color:#bdc3c7;">다른 플레이어들이 손가락을<br>고민하고 있습니다...</span>`;
             switchScreen('waitScreen');
         }
 
@@ -145,7 +157,8 @@
             }
 
             socket.emit('submitBet', { total: betTotal, amount: betAmount });
-            document.getElementById('waitMessage').innerText = "모든 베팅이 끝날 때까지 대기하세요...";
+            // 베팅 제출 후 대기 메시지
+            document.getElementById('waitMessage').innerHTML = `예측 완료!<br><br><span style="font-size:16px; color:#bdc3c7;">모든 플레이어가 베팅을 마칠 때까지<br>대기하세요...</span>`;
             switchScreen('waitScreen');
         });
 
