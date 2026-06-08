@@ -6,17 +6,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
         body { background: radial-gradient(circle at top, #1a1a2e, #0f0f1a); color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: 'Noto Sans KR', sans-serif; overflow: hidden; }
-        
-        /* 빛나는 타이틀 */
         h1 { color: #fff; font-size: 3.5rem; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 5px; text-shadow: 0 0 20px #00d2d3, 0 0 40px #00d2d3; }
         #statusTitle { font-size: 1.8rem; margin-bottom: 40px; color: #c8d6e5; text-align: center; background: rgba(255,255,255,0.05); padding: 10px 30px; border-radius: 30px; backdrop-filter: blur(5px); }
-        
         #playerBoard { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; width: 95%; max-height: 60vh; overflow-y: auto; padding: 20px; box-sizing: border-box; }
         
-        /* 반투명 글래스모피즘 카드 스타일 */
         .player-card { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); padding: 25px 20px; border-radius: 20px; text-align: center; width: 220px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); position: relative; overflow: hidden; }
         
-        /* ⭐ 정답자 카드 빛나는 연출 */
+        /* ⭐ 관전자(대기자) 반투명 처리 */
+        .spectator-card { opacity: 0.5; filter: grayscale(50%); }
+
         .winner-card { background: rgba(241, 196, 15, 0.15); border: 2px solid #f1c40f; box-shadow: 0 0 30px rgba(241, 196, 15, 0.6), inset 0 0 20px rgba(241, 196, 15, 0.2); transform: scale(1.1); z-index: 10; }
         .winner-card::before { content: 'WINNER'; position: absolute; top: -15px; right: -25px; background: #e74c3c; color: #fff; font-size: 12px; font-weight: 900; padding: 20px 30px 5px 30px; transform: rotate(45deg); box-shadow: 0 5px 10px rgba(0,0,0,0.5); }
         
@@ -24,10 +22,8 @@
         .score-badge { font-size: 18px; background: #f39c12; color: #000; padding: 2px 10px; border-radius: 20px; margin-left: 10px; vertical-align: middle; box-shadow: 0 0 10px #f39c12; }
         .player-state { font-size: 18px; color: #00d2d3; font-weight: bold; line-height: 1.6; }
         
-        /* 사이버펑크 스타일 시작 버튼 */
         #startBtn { padding: 20px 50px; font-size: 24px; background: transparent; color: #00d2d3; border: 2px solid #00d2d3; border-radius: 50px; cursor: pointer; font-weight: 900; margin-top: 30px; text-transform: uppercase; transition: all 0.3s; box-shadow: 0 0 15px rgba(0, 210, 211, 0.3), inset 0 0 15px rgba(0, 210, 211, 0.1); }
         #startBtn:hover { background: #00d2d3; color: #000; box-shadow: 0 0 30px #00d2d3; }
-        
         #trueTotalDisplay { font-size: 6rem; color: #fff; display: none; margin-top: 20px; font-weight: 900; text-shadow: 0 0 30px #f1c40f, 0 0 60px #e74c3c; letter-spacing: 5px; }
     </style>
 </head>
@@ -60,16 +56,22 @@
                 let stateText = '<span style="color:#7f8c8d">대기 중</span>';
                 let cardClass = 'player-card'; 
                 
-                if (currentPhase === 'input_fingers') {
-                    stateText = p.fingers !== null ? '<span style="color:#2ecc71">LOCK 완료</span>' : '<span style="color:#f39c12; animation: blink 1s infinite;">결정 중...</span>';
-                } else if (currentPhase === 'betting') {
-                    stateText = p.betTotal !== null ? '<span style="color:#2ecc71">BET 완료</span>' : '<span style="color:#f39c12; animation: blink 1s infinite;">베팅 중...</span>';
-                } else if (currentPhase === 'reveal') {
-                    if (p.betTotal === trueTotal) {
-                        stateText = `<span style="color:#ecf0f1">손가락: ${p.fingers}개</span><br><span style="color:#f1c40f; font-size:22px;">예측: ${p.betTotal}</span>`;
-                        cardClass = 'player-card winner-card';
-                    } else {
-                        stateText = `<span style="color:#95a5a6">손가락: ${p.fingers}개</span><br><span style="color:#e74c3c">예측: ${p.betTotal}</span>`;
+                // ⭐ 중간 합류 관전자 처리
+                if (!p.active) {
+                    stateText = '<span style="color:#95a5a6; font-size: 16px;">다음 라운드 합류 ⏳</span>';
+                    cardClass = 'player-card spectator-card';
+                } else {
+                    if (currentPhase === 'input_fingers') {
+                        stateText = p.fingers !== null ? '<span style="color:#2ecc71">LOCK 완료</span>' : '<span style="color:#f39c12; animation: blink 1s infinite;">결정 중...</span>';
+                    } else if (currentPhase === 'betting') {
+                        stateText = p.betTotal !== null ? '<span style="color:#2ecc71">BET 완료</span>' : '<span style="color:#f39c12; animation: blink 1s infinite;">베팅 중...</span>';
+                    } else if (currentPhase === 'reveal') {
+                        if (p.betTotal === trueTotal) {
+                            stateText = `<span style="color:#ecf0f1">손가락: ${p.fingers}개</span><br><span style="color:#f1c40f; font-size:22px;">예측: ${p.betTotal}</span>`;
+                            cardClass = 'player-card winner-card';
+                        } else {
+                            stateText = `<span style="color:#95a5a6">손가락: ${p.fingers}개</span><br><span style="color:#e74c3c">예측: ${p.betTotal}</span>`;
+                        }
                     }
                 }
 
