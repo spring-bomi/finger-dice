@@ -16,7 +16,7 @@ io.on('connection', (socket) => {
     socket.on('join', (name) => {
         if (name === 'DISPLAY') {
             socket.join('display'); 
-            // ⭐ [수정된 부분] 전광판이 접속/새로고침 했을 때 즉시 현재 상태와 시작 버튼을 띄우도록 신호 전송!
+            // 전광판이 접속/새로고침 했을 때 즉시 현재 상태와 시작 버튼을 띄우도록 신호 전송!
             socket.emit('updatePlayers', players, roundMode);
             socket.emit('phaseChange', gameState, players, roundMode);
         } else {
@@ -39,24 +39,22 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 기존 코드에서 startGame 이벤트를 찾아 아래처럼 수정해주세요.
+    socket.on('startGame', (mode) => {
+        // ⭐ 서버 측 방어: 플레이어가 0명이면 아무 작업도 하지 않고 돌려보냄
+        if (Object.keys(players).length === 0) return; 
 
-socket.on('startGame', (mode) => {
-    // ⭐ 서버 측 방어: 플레이어가 0명이면 아무 작업도 하지 않고 돌려보냄
-    if (Object.keys(players).length === 0) return; 
-
-    gameState = 'input_fingers';
-    roundMode = mode || 'score';
-    
-    for (let id in players) {
-        players[id].fingers = null;
-        players[id].betTotal = null;
-        players[id].betAmount = 0;
-        players[id].active = true; 
-        players[id].score = (roundMode === 'score') ? 0 : 100;
-    }
-    io.emit('phaseChange', gameState, players, roundMode);
-});
+        gameState = 'input_fingers';
+        roundMode = mode || 'score';
+        
+        for (let id in players) {
+            players[id].fingers = null;
+            players[id].betTotal = null;
+            players[id].betAmount = 0;
+            players[id].active = true; 
+            players[id].score = (roundMode === 'score') ? 0 : 100;
+        }
+        io.emit('phaseChange', gameState, players, roundMode);
+    });
 
     // 다음 라운드 시작 (기존 점수 유지, 모드 유지)
     socket.on('nextRound', () => {
@@ -136,29 +134,6 @@ socket.on('startGame', (mode) => {
         io.emit('updatePlayers', players, roundMode);
         
         const activePlayers = Object.values(players).filter(p => p.active);
+        
         if (activePlayers.length > 0) {
-            if (gameState === 'input_fingers' && activePlayers.every(p => p.fingers !== null)) {
-                gameState = 'betting';
-                io.emit('phaseChange', gameState, players, roundMode);
-            } else if (gameState === 'betting' && activePlayers.every(p => p.betTotal !== null)) {
-                gameState = 'reveal';
-                const trueTotal = activePlayers.reduce((sum, p) => sum + p.fingers, 0);
-                
-                for (let id in players) {
-                    if (players[id].active) {
-                        if (roundMode === 'score' && players[id].betTotal === trueTotal) {
-                            players[id].score += 1;
-                        } else if (roundMode === 'betting') {
-                            if (players[id].betTotal === trueTotal) players[id].score += players[id].betAmount * 2;
-                            else players[id].score -= players[id].betAmount;
-                        }
-                    }
-                }
-                io.emit('revealResult', { players, trueTotal, roundMode });
-            }
-        }
-    });
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`서버가 ${PORT}포트에서 실행 중입니다.`); });
+            if (gameState === 'input_fingers' && activePlayers.every(p => p.fingers !== null
