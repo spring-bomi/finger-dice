@@ -136,4 +136,34 @@ io.on('connection', (socket) => {
         const activePlayers = Object.values(players).filter(p => p.active);
         
         if (activePlayers.length > 0) {
-            if (gameState === 'input_fingers' && activePlayers.every(p => p.fingers !== null
+            if (gameState === 'input_fingers' && activePlayers.every(p => p.fingers !== null)) {
+                gameState = 'betting';
+                io.emit('phaseChange', gameState, players, roundMode);
+            } else if (gameState === 'betting' && activePlayers.every(p => p.betTotal !== null)) {
+                gameState = 'reveal';
+                const trueTotal = activePlayers.reduce((sum, p) => sum + p.fingers, 0);
+                
+                for (let id in players) {
+                    if (players[id].active) {
+                        if (roundMode === 'score' && players[id].betTotal === trueTotal) {
+                            players[id].score += 1;
+                        } else if (roundMode === 'betting') {
+                            if (players[id].betTotal === trueTotal) players[id].score += players[id].betAmount * 2;
+                            else players[id].score -= players[id].betAmount;
+                        }
+                    }
+                }
+                io.emit('revealResult', { players, trueTotal, roundMode });
+            }
+        } else {
+            // ⭐ [추가된 부분] 남은 플레이어가 0명일 때 강제로 로비로 초기화
+            if (gameState !== 'lobby') {
+                gameState = 'lobby';
+                io.emit('phaseChange', gameState, players, roundMode);
+            }
+        }
+    });
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => { console.log(`서버가 ${PORT}포트에서 실행 중입니다.`); });
