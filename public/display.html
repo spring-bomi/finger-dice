@@ -19,12 +19,12 @@
         .score-badge { font-size: 20px; background: #f39c12; color: #000; padding: 2px 10px; border-radius: 20px; margin-left: 10px; vertical-align: middle; box-shadow: 0 0 10px #f39c12; }
         .player-state { font-size: 18px; color: #00d2d3; font-weight: bold; line-height: 1.6; }
         
-        /* ⭐ 시작 버튼 영역 스타일 */
-        #startButtons { display: flex; gap: 20px; margin-top: 30px; }
-        .btn-score { padding: 20px 40px; font-size: 22px; background: transparent; color: #3498db; border: 2px solid #3498db; border-radius: 50px; cursor: pointer; font-weight: 900; transition: all 0.3s; box-shadow: 0 0 15px rgba(52, 152, 219, 0.3); }
-        .btn-score:hover { background: #3498db; color: #000; box-shadow: 0 0 30px #3498db; }
-        .btn-betting { padding: 20px 40px; font-size: 22px; background: transparent; color: #e74c3c; border: 2px solid #e74c3c; border-radius: 50px; cursor: pointer; font-weight: 900; transition: all 0.3s; box-shadow: 0 0 15px rgba(231, 76, 60, 0.3); }
-        .btn-betting:hover { background: #e74c3c; color: #fff; box-shadow: 0 0 30px #e74c3c; }
+        /* 버튼 영역 스타일 공통 적용 */
+        .action-container { display: none; gap: 20px; margin-top: 30px; }
+        .btn-score, .btn-next { padding: 20px 40px; font-size: 22px; background: transparent; color: #3498db; border: 2px solid #3498db; border-radius: 50px; cursor: pointer; font-weight: 900; transition: all 0.3s; box-shadow: 0 0 15px rgba(52, 152, 219, 0.3); }
+        .btn-score:hover, .btn-next:hover { background: #3498db; color: #000; box-shadow: 0 0 30px #3498db; }
+        .btn-betting, .btn-end { padding: 20px 40px; font-size: 22px; background: transparent; color: #e74c3c; border: 2px solid #e74c3c; border-radius: 50px; cursor: pointer; font-weight: 900; transition: all 0.3s; box-shadow: 0 0 15px rgba(231, 76, 60, 0.3); }
+        .btn-betting:hover, .btn-end:hover { background: #e74c3c; color: #fff; box-shadow: 0 0 30px #e74c3c; }
 
         #trueTotalDisplay { font-size: 6rem; color: #fff; display: none; margin-top: 20px; font-weight: 900; text-shadow: 0 0 30px #f1c40f, 0 0 60px #e74c3c; letter-spacing: 5px; }
     </style>
@@ -37,9 +37,16 @@
     <div id="playerBoard"></div>
     <div id="trueTotalDisplay"></div>
 
-    <div id="startButtons">
+    <!-- ⭐ 최초 모드 선택 버튼 -->
+    <div id="startButtons" class="action-container">
         <button class="btn-score" onclick="startGame('score')">점수제 시작</button>
         <button class="btn-betting" onclick="startGame('betting')">베팅제 시작</button>
+    </div>
+
+    <!-- ⭐ 라운드 종료 시 진행/종료 선택 버튼 -->
+    <div id="nextButtons" class="action-container">
+        <button class="btn-next" onclick="nextRound()">다음 라운드 시작</button>
+        <button class="btn-end" onclick="endGame()">게임 종료 (모드 변경)</button>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -50,6 +57,7 @@
         const statusTitle = document.getElementById('statusTitle');
         const playerBoard = document.getElementById('playerBoard');
         const startButtons = document.getElementById('startButtons');
+        const nextButtons = document.getElementById('nextButtons');
         const trueTotalDisplay = document.getElementById('trueTotalDisplay');
 
         let currentPhase = 'lobby';
@@ -94,7 +102,7 @@
         socket.on('updatePlayers', (players, mode) => {
             currentMode = mode || 'score';
             if (currentPhase === 'lobby') {
-                statusTitle.innerText = `현재 ${Object.keys(players).length}명의 플레이어가 테이블에 있습니다`;
+                statusTitle.innerText = `현재 ${Object.keys(players).length}명의 플레이어가 대기 중입니다`;
             }
             renderPlayers(players);
         });
@@ -108,12 +116,20 @@
             currentPhase = phase;
             currentMode = mode || 'score';
             trueTotalDisplay.style.display = 'none';
-            if (phase === 'input_fingers') {
+            
+            // 상태에 따른 UI 제어
+            if (phase === 'lobby') {
+                statusTitle.innerText = "게임 모드를 선택해주세요";
+                startButtons.style.display = 'flex';
+                nextButtons.style.display = 'none';
+            } else if (phase === 'input_fingers') {
                 statusTitle.innerText = "비밀리에 손가락 개수를 결정해주십시오";
                 startButtons.style.display = 'none';
+                nextButtons.style.display = 'none';
             } else if (phase === 'betting') {
                 statusTitle.innerText = currentMode === 'betting' ? "칩을 걸고 총합을 예측하십시오" : "모든 플레이어의 손가락 총합을 예측하십시오";
             }
+            
             if (players) renderPlayers(players);
         });
 
@@ -127,13 +143,24 @@
             trueTotalDisplay.innerHTML = `TOTAL : ${data.trueTotal}`;
             trueTotalDisplay.style.display = 'block';
             
+            // 4초 뒤에 라운드 종료 관련 버튼 활성화
             setTimeout(() => { 
-                startButtons.style.display = 'flex'; 
+                nextButtons.style.display = 'flex'; 
             }, 4000);
         });
 
         window.startGame = function(mode) {
             socket.emit('startGame', mode);
+        }
+
+        window.nextRound = function() {
+            socket.emit('nextRound');
+        }
+
+        window.endGame = function() {
+            if(confirm("게임을 완전히 종료하고 모드 선택 화면으로 돌아가시겠습니까?\n(모든 점수가 초기화됩니다)")) {
+                socket.emit('endGame');
+            }
         }
     </script>
 </body>
