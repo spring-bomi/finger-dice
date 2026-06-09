@@ -5,8 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>핑거 다이스 - VIP 베팅룸</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
     <style>
-        body { margin: 0; background: radial-gradient(circle at 50% 50%, #1e272e, #000000); color: #fff; font-family: 'Noto Sans KR', sans-serif; text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; touch-action: manipulation; transition: background 0.5s; }
+        body { margin: 0; background: radial-gradient(circle at 50% 50%, #1e272e, #000000); color: #fff; font-family: 'Noto Sans KR', sans-serif; text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; touch-action: manipulation; transition: background 0.5s; overflow: hidden; }
         .screen { display: none; width: 90%; max-width: 400px; animation: fadeIn 0.5s ease-out; }
         .active { display: block; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -16,14 +22,20 @@
         button { padding: 15px 30px; font-size: 20px; background: linear-gradient(135deg, #f39c12, #d35400); color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: 900; width: 100%; box-shadow: 0 5px 20px rgba(211, 84, 0, 0.5); box-sizing: border-box; text-transform: uppercase; transition: transform 0.1s; }
         button:active { transform: scale(0.95); }
         
-        .finger-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px; justify-items: center; }
+        .finger-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 15px; justify-items: center; }
         .finger-btn { background: #2c3e50; border: 4px dashed #34495e; border-radius: 50%; width: 80px; height: 80px; font-size: 28px; padding: 0; box-shadow: 0 10px 20px rgba(0,0,0,0.5); color: #ecf0f1; transition: all 0.2s; }
-        .finger-btn:active { background: #f39c12; border-color: #fff; color: #000; box-shadow: 0 0 20px #f39c12; transform: scale(0.9); }
+        .finger-btn:active, .finger-btn.ai-selected { background: #f39c12; border-color: #fff; color: #000; box-shadow: 0 0 20px #f39c12; transform: scale(0.9); }
         .title { color: #f1c40f; text-shadow: 0 0 15px rgba(241, 196, 15, 0.5); font-weight: 900; letter-spacing: 2px; }
         .subtitle { color: #bdc3c7; font-size: 16px; margin-bottom: 30px; }
+
+        /* ⭐ 카메라 및 AI 인식 UI */
+        #webcam { position: absolute; top: 15px; right: 15px; width: 120px; height: 90px; border-radius: 10px; z-index: 50; transform: scaleX(-1); border: 2px solid #2ecc71; box-shadow: 0 5px 15px rgba(0,0,0,0.5); background-color: #000; display: none; }
+        #aiStatus { font-size: 14px; color: #2ecc71; margin-bottom: 20px; font-weight: bold; background: rgba(46, 204, 113, 0.1); padding: 8px; border-radius: 10px; }
     </style>
 </head>
 <body>
+
+    <video id="webcam" autoplay playsinline></video>
 
     <div id="loginScreen" class="screen active">
         <h1 class="title" style="font-size: 32px; margin-bottom:10px;">LIAR'S DICE</h1>
@@ -32,7 +44,6 @@
         <button id="joinBtn">테이블 입장</button>
     </div>
 
-    <!-- ⭐ 상황별로 메시지가 바뀌는 대기 화면 -->
     <div id="waitScreen" class="screen">
         <div class="loader" style="font-size: 50px; margin-bottom: 20px; animation: spin 2s linear infinite;">⏳</div>
         <h2 id="waitMessage" style="color: #3498db; line-height: 1.5; text-shadow: 0 0 10px rgba(52, 152, 219, 0.5);">대기 중...</h2>
@@ -40,15 +51,19 @@
 
     <div id="fingerScreen" class="screen">
         <h2 class="title">손가락 개수 확정 (LOCK)</h2>
-        <p class="subtitle" style="color: #e74c3c; font-weight: bold;">남들이 보지 못하게 몰래 선택하세요</p>
+        <p class="subtitle" style="color: #e74c3c; font-weight: bold;">카메라에 손을 보여 1.5초간 유지하세요</p>
+        
+        <div id="aiStatus">✋ AI 카메라 인식 대기 중...</div>
+
         <div class="finger-grid">
-            <button class="finger-btn" onclick="submitFingers(0)">0</button>
-            <button class="finger-btn" onclick="submitFingers(1)">1</button>
-            <button class="finger-btn" onclick="submitFingers(2)">2</button>
-            <button class="finger-btn" onclick="submitFingers(3)">3</button>
-            <button class="finger-btn" onclick="submitFingers(4)">4</button>
-            <button class="finger-btn" onclick="submitFingers(5)">5</button>
+            <button class="finger-btn" id="btn-0" onclick="submitFingers(0)">0</button>
+            <button class="finger-btn" id="btn-1" onclick="submitFingers(1)">1</button>
+            <button class="finger-btn" id="btn-2" onclick="submitFingers(2)">2</button>
+            <button class="finger-btn" id="btn-3" onclick="submitFingers(3)">3</button>
+            <button class="finger-btn" id="btn-4" onclick="submitFingers(4)">4</button>
+            <button class="finger-btn" id="btn-5" onclick="submitFingers(5)">5</button>
         </div>
+        <p style="color: #7f8c8d; font-size: 12px; margin-top: 10px;">* 버튼을 직접 터치해서 확정할 수도 있습니다.</p>
     </div>
 
     <div id="bettingScreen" class="screen">
@@ -69,37 +84,118 @@
     <div id="resultScreen" class="screen">
         <h2 style="color: #ecf0f1; letter-spacing: 5px;">RESULT</h2>
         <div id="myResult" style="margin: 30px 0; background: rgba(0,0,0,0.6); padding: 20px; border-radius: 15px; border: 1px solid rgba(255,255,255,0.1);"></div>
-        <!-- 대기 화면으로 돌아갈 때 안내 문구 세팅 -->
         <button onclick="document.getElementById('waitMessage').innerHTML='다음 라운드를 준비하는 중입니다...<br><br><span style=\'font-size:16px; color:#f1c40f;\'>전광판을 확인해주세요.</span>'; switchScreen('waitScreen');" style="background: #34495e; box-shadow: none;">대기 화면으로</button>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
+        const videoElement = document.getElementById('webcam');
+        const aiStatus = document.getElementById('aiStatus');
+        
         let currentMode = 'score';
         let myScore = 0;
+        let isCameraRunning = false;
         
+        // ⭐ AI 손가락 인식 유지용 변수
+        let stableFingerCount = -1;
+        let stableTimer = null;
+        let isPhaseInput = false;
+
         function switchScreen(screenId) {
             document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
             document.getElementById(screenId).classList.add('active');
             document.body.style.background = 'radial-gradient(circle at 50% 50%, #1e272e, #000000)'; 
+            
+            // 카메라 화면은 손가락 확정 단계에서만 노출
+            if (screenId === 'fingerScreen') {
+                videoElement.style.display = 'block';
+                isPhaseInput = true;
+            } else {
+                videoElement.style.display = 'none';
+                isPhaseInput = false;
+                clearTimeout(stableTimer);
+            }
         }
 
         document.getElementById('joinBtn').addEventListener('click', () => {
             const nickname = document.getElementById('nicknameInput').value.trim();
             if(nickname) {
                 socket.emit('join', nickname);
-                // 로그인 후 로비 대기 메시지
                 document.getElementById('waitMessage').innerHTML = `입장 완료!<br><br><span style="font-size:16px; color:#f1c40f;">호스트가 게임 모드를 선택할 때까지<br>기다려주세요.</span>`;
                 switchScreen('waitScreen');
+                startCamera(); // 권한 획득을 위해 로그인 시 카메라 시작
             } else { alert("닉네임을 입력해주세요!"); }
         });
+
+        // 🟢 [AI 로직] 카메라 시작 및 손가락 계산
+        function startCamera() {
+            if (isCameraRunning) return;
+            isCameraRunning = true;
+
+            const hands = new Hands({locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }});
+
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+
+            hands.onResults((results) => {
+                if (!isPhaseInput) return;
+
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    const landmarks = results.multiHandLandmarks[0];
+                    let count = 0;
+
+                    // 검지, 중지, 약지, 새끼: 끝 마디(Tip)가 아래 마디(PIP)보다 위(y값이 작음)에 있으면 펴진 것
+                    if (landmarks[8].y < landmarks[6].y) count++;
+                    if (landmarks[12].y < landmarks[10].y) count++;
+                    if (landmarks[16].y < landmarks[14].y) count++;
+                    if (landmarks[20].y < landmarks[18].y) count++;
+
+                    // 엄지: 엄지 끝(4)이 새끼손가락 밑단(17)에서 멀리 떨어져 있으면 펴진 것
+                    const distTip = Math.hypot(landmarks[4].x - landmarks[17].x, landmarks[4].y - landmarks[17].y);
+                    const distBase = Math.hypot(landmarks[2].x - landmarks[17].x, landmarks[2].y - landmarks[17].y);
+                    if (distTip > distBase * 1.2) count++;
+
+                    count = Math.min(count, 5); // 혹시 모를 오차 방지 최대 5
+
+                    // UI 시각 효과 반영
+                    document.querySelectorAll('.finger-btn').forEach(btn => btn.classList.remove('ai-selected'));
+                    document.getElementById(`btn-${count}`).classList.add('ai-selected');
+
+                    // 일정한 숫자가 1.5초간 유지되면 자동 제출 (흔들림 방지)
+                    if (stableFingerCount !== count) {
+                        stableFingerCount = count;
+                        aiStatus.innerText = `✋ 인식된 손가락: ${count}개 (그대로 유지하세요!)`;
+                        clearTimeout(stableTimer);
+                        
+                        stableTimer = setTimeout(() => {
+                            if (isPhaseInput) {
+                                aiStatus.innerText = `✅ ${count}개 확정 완료!`;
+                                submitFingers(count);
+                            }
+                        }, 1500);
+                    }
+                } else {
+                    // 손이 안 보일 때 초기화
+                    document.querySelectorAll('.finger-btn').forEach(btn => btn.classList.remove('ai-selected'));
+                    aiStatus.innerText = "✋ 화면에 손을 보여주세요";
+                    stableFingerCount = -1;
+                    clearTimeout(stableTimer);
+                }
+            });
+
+            const camera = new Camera(videoElement, {
+                onFrame: async () => { await hands.send({image: videoElement}); },
+                width: 640, height: 480
+            });
+            camera.start();
+        }
 
         socket.on('phaseChange', (phase, playersData, mode) => {
             currentMode = mode;
             const me = playersData[socket.id];
             
-            // 로비(게임 종료) 상태일 때 처리
             if (phase === 'lobby') {
                 document.getElementById('waitMessage').innerHTML = `대기실 입장<br><br><span style="font-size:16px; color:#f1c40f;">호스트가 게임 모드를 선택할 때까지<br>기다려주세요.</span>`;
                 if(me && !document.getElementById('loginScreen').classList.contains('active')) {
@@ -115,6 +211,11 @@
             }
 
             if(phase === 'input_fingers') {
+                // 초기화 후 진입
+                stableFingerCount = -1;
+                clearTimeout(stableTimer);
+                document.querySelectorAll('.finger-btn').forEach(btn => btn.classList.remove('ai-selected'));
+                aiStatus.innerText = "✋ AI 카메라 인식 대기 중...";
                 switchScreen('fingerScreen');
             }
             if(phase === 'betting') {
@@ -132,9 +233,11 @@
             }
         });
 
+        // 수동 버튼 터치 또는 AI 인식 완료 시 호출
         window.submitFingers = function(num) {
+            isPhaseInput = false; // 제출 후 즉시 인식 중단
+            clearTimeout(stableTimer);
             socket.emit('submitFingers', num);
-            // 손가락 제출 후 대기 메시지
             document.getElementById('waitMessage').innerHTML = `선택 완료!<br><br><span style="font-size:16px; color:#bdc3c7;">다른 플레이어들이 손가락을<br>고민하고 있습니다...</span>`;
             switchScreen('waitScreen');
         }
@@ -157,7 +260,6 @@
             }
 
             socket.emit('submitBet', { total: betTotal, amount: betAmount });
-            // 베팅 제출 후 대기 메시지
             document.getElementById('waitMessage').innerHTML = `예측 완료!<br><br><span style="font-size:16px; color:#bdc3c7;">모든 플레이어가 베팅을 마칠 때까지<br>대기하세요...</span>`;
             switchScreen('waitScreen');
         });
